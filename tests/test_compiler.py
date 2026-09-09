@@ -30,6 +30,15 @@ class CompilerTests(unittest.TestCase):
         self.assertNotIn("The model remains still", result.positive)
         self.assertIn("temporal flicker", result.negative)
 
+    def test_default_avoid_can_be_disabled(self):
+        result = build_prompt(replace(self.params, negative="내가 지정한 제외"), include_default_negative=False)
+        self.assertEqual(result.negative, "내가 지정한 제외")
+        self.assertNotIn("watermark", result.combined)
+        self.assertIn("기본 제외 조건을 사용하지 않았습니다", result.notes[1])
+        empty = build_prompt(self.params, include_default_negative=False)
+        self.assertEqual(empty.negative, "")
+        self.assertNotIn("AVOID\n", empty.combined)
+
     def test_clean_and_deep_are_consistent(self):
         result = build_prompt(replace(self.params, wear="pristine", detail="intricate", focus="deep"))
         self.assertIn("no dirt, scratches", result.positive)
@@ -45,6 +54,8 @@ class CompilerTests(unittest.TestCase):
             with self.subTest(change=list(change)):
                 with self.assertRaises(ValueError):
                     build_prompt(replace(self.params, **change))
+        with self.assertRaises(ValueError):
+            build_prompt(self.params, include_default_negative="no")
 
     def test_invalid_projects(self):
         for data in [b"\xff", "{", "[]", '{"version":true}', '{"version":2,"params":{}}', " " * 500001]:
