@@ -1,6 +1,7 @@
 from dataclasses import asdict, dataclass, fields
-import json
 import hashlib
+import json
+
 from .styles import StyleSpec, style_from_dict
 
 
@@ -26,7 +27,9 @@ OPTIONS = {
 
 
 def action_context(scene, subject):
-    return hashlib.sha256(json.dumps([scene.strip(), subject.strip()], ensure_ascii=False).encode("utf-8")).hexdigest()
+    return hashlib.sha256(
+        json.dumps([scene.strip(), subject.strip()], ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -72,6 +75,7 @@ class PromptParams:
     action_context: str = ""
     extra: str = ""
     negative: str = ""
+    use_default_negative: bool = True
     primary_style: StyleSpec | None = None
     secondary_style: StyleSpec | None = None
     blend_mode: str = "accent"
@@ -79,14 +83,24 @@ class PromptParams:
     characters: tuple[CharacterSpec, ...] = ()
 
     def validate(self):
-        if not isinstance(self.action_context, str) or (self.action_context and (len(self.action_context) != 64 or any(c not in "0123456789abcdef" for c in self.action_context))):
+        if not isinstance(self.action_context, str) or (
+            self.action_context
+            and (
+                len(self.action_context) != 64
+                or any(c not in "0123456789abcdef" for c in self.action_context)
+            )
+        ):
             raise ValueError("동작과 장면의 연결 정보가 올바르지 않습니다.")
+        if type(self.use_default_negative) is not bool:
+            raise ValueError("기본 제외 조건 사용 여부가 올바르지 않습니다.")
         for style in (self.primary_style, self.secondary_style):
             if style is not None:
                 if not isinstance(style, StyleSpec):
                     raise ValueError("올바른 스타일 설정이 아닙니다.")
                 style.validate()
-        if self.secondary_style and (not self.primary_style or self.secondary_style == self.primary_style):
+        if self.secondary_style and (
+            not self.primary_style or self.secondary_style == self.primary_style
+        ):
             raise ValueError("보조 스타일은 주 스타일과 다른 스타일을 선택하세요.")
         if type(self.secondary_weight) is not int or not 10 <= self.secondary_weight <= 50:
             raise ValueError("보조 스타일 비중은 10~50의 정수여야 합니다.")
@@ -100,7 +114,13 @@ class PromptParams:
             value = getattr(self, name)
             if not isinstance(value, str) or value not in choices:
                 raise ValueError(f"{name}: 허용되지 않는 설정입니다.")
-        for name, limit in {"scene": 6000, "subject": 500, "action": 2000, "extra": 3000, "negative": 2000}.items():
+        for name, limit in {
+            "scene": 6000,
+            "subject": 500,
+            "action": 2000,
+            "extra": 3000,
+            "negative": 2000,
+        }.items():
             value = getattr(self, name)
             if not isinstance(value, str) or len(value) > limit:
                 raise ValueError(f"{name}: 텍스트는 {limit}자 이내여야 합니다.")
@@ -112,7 +132,11 @@ class PromptParams:
 
 def dump_project(params):
     params.validate()
-    return json.dumps({"version": 4, "params": asdict(params)}, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {"version": 5, "params": asdict(params)},
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 def load_project(raw):
@@ -122,17 +146,34 @@ def load_project(raw):
         data = json.loads(raw)
     except (ValueError, UnicodeError) as exc:
         raise ValueError("올바른 UTF-8 JSON 파일이 아닙니다.") from exc
-    if not isinstance(data, dict) or type(data.get("version")) is not int or data["version"] not in (2, 3, 4):
+    if (
+        not isinstance(data, dict)
+        or type(data.get("version")) is not int
+        or data["version"] not in (2, 3, 4, 5)
+    ):
         raise ValueError("지원하지 않는 프로젝트 형식입니다.")
+
+    version = data["version"]
     values = data.get("params")
     expected = {f.name for f in fields(PromptParams)}
-    if data["version"] < 4:
+    if version < 5:
+        expected -= {"use_default_negative"}
+    if version < 4:
         expected -= {"action_source", "action_context"}
-    if data["version"] == 2:
-        expected -= {"primary_style", "secondary_style", "blend_mode", "secondary_weight", "characters"}
+    if version == 2:
+        expected -= {
+            "primary_style",
+            "secondary_style",
+            "blend_mode",
+            "secondary_weight",
+            "characters",
+        }
     if not isinstance(values, dict) or set(values) != expected:
         raise ValueError("프로젝트 설정이 누락되었거나 알 수 없는 항목이 있습니다.")
-    if data["version"] >= 3:
+
+    if version < 5:
+        values["use_default_negative"] = True
+    if version >= 3:
         for key in ("primary_style", "secondary_style"):
             if values[key] is not None:
                 values[key] = style_from_dict(values[key])
@@ -140,17 +181,44 @@ def load_project(raw):
         if not isinstance(rows, list) or len(rows) > 6:
             raise ValueError("올바른 캐릭터 목록이 아닙니다.")
         for row in rows:
-            if not isinstance(row, dict) or set(row) != {f.name for f in fields(CharacterSpec)}:
+            if not isinstance(row, dict) or set(row) != {
+                f.name for f in fields(CharacterSpec)
+            }:
                 raise ValueError("캐릭터 설정이 누락되었거나 올바르지 않습니다.")
         values["characters"] = tuple(CharacterSpec(**row) for row in rows)
+
     params = PromptParams(**values)
     params.validate()
     return params
 
 
 PRESETS = {
-    "철도 디오라마": PromptParams(scene="작업대 위 산악 철도 디오라마. 작은 기차가 석조 터널 입구에 있고 선로 옆에 이끼와 자갈이 보인다.", subject="터널 입구의 소형 증기 기관차", material="mixed", scale="1:87"),
-    "골목 상점": PromptParams(scene="작은 꽃집이 있는 골목 디오라마. 창가 화분과 나무 문, 작은 벽돌 바닥이 정교하게 배치되어 있다.", subject="꽃집 입구와 작은 화분", scale="1:24", lighting="golden", detail="intricate"),
-    "목조 공방": PromptParams(scene="작은 목조 공방의 실내 모형. 작업대에 도구와 깎은 나무 조각이 정돈되어 있다.", subject="공방 중앙의 나무 작업대", scale="1:12", material="wood", background="environment", lighting="daylight"),
-    "야간 도시": PromptParams(scene="야간 도시 블록의 미니어처. 작은 건물 창문에서 빛이 새어 나오고 도로에는 모형 자동차가 놓여 있다.", subject="조명이 켜진 모퉁이 건물", scale="1:160", lighting="night", composition="wide"),
+    "철도 디오라마": PromptParams(
+        scene="작업대 위 산악 철도 디오라마. 작은 기차가 석조 터널 입구에 있고 선로 옆에 이끼와 자갈이 보인다.",
+        subject="터널 입구의 소형 증기 기관차",
+        material="mixed",
+        scale="1:87",
+    ),
+    "골목 상점": PromptParams(
+        scene="작은 꽃집이 있는 골목 디오라마. 창가 화분과 나무 문, 작은 벽돌 바닥이 정교하게 배치되어 있다.",
+        subject="꽃집 입구와 작은 화분",
+        scale="1:24",
+        lighting="golden",
+        detail="intricate",
+    ),
+    "목조 공방": PromptParams(
+        scene="작은 목조 공방의 실내 모형. 작업대에 도구와 깎은 나무 조각이 정돈되어 있다.",
+        subject="공방 중앙의 나무 작업대",
+        scale="1:12",
+        material="wood",
+        background="environment",
+        lighting="daylight",
+    ),
+    "야간 도시": PromptParams(
+        scene="야간 도시 블록의 미니어처. 작은 건물 창문에서 빛이 새어 나오고 도로에는 모형 자동차가 놓여 있다.",
+        subject="조명이 켜진 모퉁이 건물",
+        scale="1:160",
+        lighting="night",
+        composition="wide",
+    ),
 }
