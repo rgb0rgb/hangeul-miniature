@@ -5,7 +5,14 @@ import tempfile
 import unittest
 
 from modules.compiler import build_prompt
-from modules.styles import BUILTIN_STYLES, StyleSpec, delete_style, read_styles, replace_style, save_style
+from modules.styles import (
+    BUILTIN_STYLES,
+    StyleSpec,
+    delete_style,
+    read_styles,
+    replace_style,
+    save_style,
+)
 from modules.templates import CharacterSpec, PRESETS, dump_project, load_project
 
 
@@ -22,34 +29,71 @@ class StyleTests(unittest.TestCase):
                     continue
                 for mode in ("accent", "split", "fusion"):
                     with self.subTest(a=a.name, b=b.name, mode=mode):
-                        params = replace(self.base, primary_style=a, secondary_style=b, blend_mode=mode)
+                        params = replace(
+                            self.base,
+                            primary_style=a,
+                            secondary_style=b,
+                            blend_mode=mode,
+                        )
                         result = build_prompt(params)
                         self.assertIn(a.name, result.positive)
                         self.assertIn(b.name, result.positive)
-                        self.assertIn("Preserve the explicit scene, subject and character identity first", result.positive)
+                        self.assertIn(
+                            "Preserve the explicit scene, subject and character identity first",
+                            result.positive,
+                        )
                         self.assertEqual(params, load_project(dump_project(params)))
 
     def test_accent_does_not_import_secondary_anatomy_or_world(self):
-        result = build_prompt(replace(self.base, primary_style=self.primary, secondary_style=self.secondary))
+        result = build_prompt(
+            replace(
+                self.base,
+                primary_style=self.primary,
+                secondary_style=self.secondary,
+            )
+        )
         self.assertIn(self.primary.form, result.positive)
         self.assertIn(self.secondary.palette, result.positive)
         self.assertNotIn(self.secondary.form, result.positive)
         self.assertNotIn(self.secondary.environment, result.positive)
 
     def test_split_assigns_secondary_only_to_environment(self):
-        result = build_prompt(replace(self.base, primary_style=self.primary, secondary_style=self.secondary, blend_mode="split"))
+        result = build_prompt(
+            replace(
+                self.base,
+                primary_style=self.primary,
+                secondary_style=self.secondary,
+                blend_mode="split",
+            )
+        )
         self.assertIn(self.secondary.environment, result.positive)
         self.assertNotIn(self.secondary.form, result.positive)
         self.assertNotIn(self.secondary.costume, result.positive)
         self.assertNotIn("30%", result.positive)
 
     def test_fusion_weight_and_primary_conflict_resolution(self):
-        result = build_prompt(replace(self.base, primary_style=self.primary, secondary_style=self.secondary, blend_mode="fusion", secondary_weight=40))
+        result = build_prompt(
+            replace(
+                self.base,
+                primary_style=self.primary,
+                secondary_style=self.secondary,
+                blend_mode="fusion",
+                secondary_weight=40,
+            )
+        )
         self.assertIn("60% primary and 40% secondary", result.positive)
-        self.assertIn("If anatomy or shapes conflict, retain the primary design", result.positive)
+        self.assertIn(
+            "If anatomy or shapes conflict, retain the primary design",
+            result.positive,
+        )
 
     def test_character_identity_and_video_continuity(self):
-        cast = (CharacterSpec("마리오", "빨간 모자", "웃음", "손 흔들기", "작은 꽃", "왼쪽"), CharacterSpec("아이언맨", "붉은 갑옷", "친근한 눈빛", "서 있기", "작은 공구", "오른쪽"))
+        cast = (
+            CharacterSpec("마리오", "빨간 모자", "웃음", "손 흔들기", "작은 꽃", "왼쪽"),
+            CharacterSpec(
+                "아이언맨", "붉은 갑옷", "친근한 눈빛", "서 있기", "작은 공구", "오른쪽"
+            ),
+        )
         params = replace(self.base, characters=cast, medium="video")
         result = build_prompt(params)
         for character in cast:
@@ -62,9 +106,21 @@ class StyleTests(unittest.TestCase):
 
     def test_legacy_v2_migration(self):
         data = asdict(self.base)
-        for key in ("primary_style", "secondary_style", "blend_mode", "secondary_weight", "characters", "action_source", "action_context"):
+        for key in (
+            "primary_style",
+            "secondary_style",
+            "blend_mode",
+            "secondary_weight",
+            "characters",
+            "action_source",
+            "action_context",
+            "use_default_negative",
+        ):
             data.pop(key)
-        self.assertEqual(load_project(json.dumps({"version": 2, "params": data})), self.base)
+        self.assertEqual(
+            load_project(json.dumps({"version": 2, "params": data})),
+            self.base,
+        )
 
     def test_custom_style_is_portable_and_persistent(self):
         style = StyleSpec("내 스타일", "각진 형태", "청록색", "외투", "작은 항구", "차분함")
@@ -92,7 +148,15 @@ class StyleTests(unittest.TestCase):
             self.assertEqual(read_styles(folder), ([], []))
 
     def test_invalid_nested_data_rejected(self):
-        for changes in ({"characters": (CharacterSpec(""),)}, {"characters": ({"identity": "x"},)}, {"characters": (CharacterSpec("x"),) * 7}, {"secondary_style": self.secondary}, {"primary_style": self.primary, "secondary_style": self.primary}, {"secondary_weight": True}):
+        changes_list = (
+            {"characters": (CharacterSpec(""),)},
+            {"characters": ({"identity": "x"},)},
+            {"characters": (CharacterSpec("x"),) * 7},
+            {"secondary_style": self.secondary},
+            {"primary_style": self.primary, "secondary_style": self.primary},
+            {"secondary_weight": True},
+        )
+        for changes in changes_list:
             with self.subTest(changes=str(changes)):
                 with self.assertRaises(ValueError):
                     build_prompt(replace(self.base, **changes))
