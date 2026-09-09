@@ -1,0 +1,27 @@
+# Local environments and Python build artifacts
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Local credentials, preferences, and saved user content
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+data/
+miniature_work.json
+miniature_project.json
+miniature_prompt.txt
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
