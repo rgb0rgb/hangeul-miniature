@@ -17,7 +17,9 @@ cd hangeul-miniature
 
 ### Windows
 
-Windows에서 `run.bat`을 실행합니다. Python 공식 Windows 런처인 `py`를 사용해 가상환경을 만들므로 Microsoft Store의 `python` 실행 별칭과 충돌하지 않습니다. 최초 실행은 Python과 패키지 다운로드 연결이 필요합니다. 설치 이후에는 `run_no_install.bat`으로 실행할 수 있습니다.
+Windows에서 `run.bat`을 실행합니다. 먼저 Python 공식 Windows 런처 `py`를 사용하고, `py`가 없는 환경에서는 정상 설치된 `python` 명령으로 자동 대체합니다. 최초 실행은 Python과 패키지 다운로드 연결이 필요합니다. 설치 이후에는 `run_no_install.bat`으로 실행할 수 있습니다.
+
+두 실행 스크립트는 Streamlit을 `localhost`에만 바인딩하여 같은 LAN의 다른 기기에서 앱에 직접 접속하지 못하도록 합니다.
 
 ### Linux / macOS
 
@@ -25,10 +27,10 @@ Windows에서 `run.bat`을 실행합니다. Python 공식 Windows 런처인 `py`
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-python -m streamlit run app.py
+python -m streamlit run app.py --server.address localhost
 ```
 
-기본 접속 주소는 `http://localhost:8501`입니다.
+기본 접속 주소는 `http://localhost:8501`입니다. 다른 기기에 공개하려면 Streamlit의 네트워크·인증 구성을 이해한 상태에서 사용자가 명시적으로 별도 설정해야 합니다.
 
 ## 구성
 
@@ -37,13 +39,17 @@ python -m streamlit run app.py
 - 렌즈, 초점, 각도, 구도, 조명, 배경 설정
 - 영상 전용 카메라 이동, 길이, 피사체 동작, 시간적 일관성 지시
 - 전체 프롬프트·본문·제외 조건 구분, 코드 블록 복사, TXT 다운로드
+- 기본 제외 조건을 켜거나 끌 수 있고 사용자 제외 조건은 별도로 입력 가능
 - 캐릭터별 이름·외형·표정·포즈·소지품·상호 위치 설정 (최대 6명)
-- 기본 스타일과 사용자 스타일, 주/보조 스타일 혼합
-- 현재 작업 저장·불러오기 JSON
+- 기본 스타일 10종: 지브리, 월레스와 그로밋, 슈퍼 마리오, 어벤져스, 픽사, 레고, 산리오, 포켓몬, 실바니안 패밀리, 한국 동화 마을
+- 사용자 스타일 추가·수정·삭제, 주/보조 스타일 혼합
+- 현재 작업 저장·불러오기 JSON v4, 기존 v2·v3 작업 파일 읽기 지원
 
-영상 동작은 기본적으로 현재 장면에 적힌 사건 순서를 따릅니다. `동작 직접 지정`을 선택한 경우 별도 동작을 사용하며, 작성 당시 장면·주 피사체에 연결됩니다. 장면이나 주 피사체를 편집하면 이전 별도 동작을 초기화합니다.
+설정을 바꾸면 마지막 생성 결과가 현재 설정과 다르다는 알림을 표시합니다. `현재 작업 저장`은 장면과 주 피사체 등 필수 입력이 유효할 때만 활성화됩니다. TXT는 마지막으로 생성한 프롬프트를 저장합니다.
 
-사용자 스타일은 `data/styles`에 저장되어 재실행해도 유지됩니다. 스타일 파일명은 내용 기반 SHA-256 키를 사용하고 완성된 파일을 원자적으로 저장합니다. 테스트용 저장 위치는 `MINI1_STYLE_DIR` 환경변수로 지정할 수 있습니다.
+영상 동작은 기본적으로 현재 장면에 적힌 사건 순서를 따릅니다. `동작 직접 지정`을 선택한 경우 별도 동작을 사용하며, 작성 당시 장면·주 피사체에 연결됩니다. 장면이나 주 피사체를 편집하면 이전 별도 동작을 초기화합니다. 기존 v2·v3 파일의 동작 텍스트는 보존하되 자동 적용하지 않으며, 현재 장면과 연결되지 않은 별도 동작은 생성기에서도 제외합니다.
+
+사용자 스타일은 `data/styles`에 저장되어 재실행해도 유지됩니다. 스타일 파일명은 내용 기반 SHA-256 키를 사용하고 완성된 파일을 원자적으로 저장합니다. 작업 파일에 포함된 사용자 스타일은 별도 설치 없이 해당 작업에서 선택·사용할 수 있습니다. 테스트용 저장 위치는 `MINI1_STYLE_DIR` 환경변수로 지정할 수 있습니다.
 
 ## 대상 생성 모델
 
@@ -62,6 +68,8 @@ GitHub Actions는 두 환경을 검사합니다.
 - `minimum-streamlit`: Streamlit 1.38.0 고정 + 전체 단위 테스트 + 실제 프롬프트 생성 버튼 AppTest
 - `supported-latest`: requirements 범위의 최신 Streamlit + 전체 단위 테스트 + 연속 AppTest 실행
 
+자동 테스트는 입력 검증, 스타일 혼합, 캐릭터 보존, 사용자 스타일 저장·수정·삭제, 작업 파일 호환성, 동작-장면 연결, 기본 제외 조건 해제와 화면 생성을 검사합니다. Streamlit AppTest가 파일 업로더에 파일을 주입하는 기능은 제공하지 않으므로 업로더 위젯 자체 대신, 업로드 버튼이 호출하는 동일한 `load_project → apply_params` 경로와 프로젝트 파서를 검증합니다.
+
 ## 라이선스
 
 개인·비상업적 사용을 허용하는 **Hangeul Miniature Personal Non-Commercial License 1.0**을 적용합니다. 상업적 사용에는 저작권자의 사전 서면 허가가 필요합니다. 자세한 조건은 `LICENSE`를 확인하세요. 이 라이선스는 OSI 승인 오픈소스 라이선스가 아닙니다.
@@ -69,16 +77,16 @@ GitHub Actions는 두 환경을 검사합니다.
 ## 파일 구성
 
 ```text
-app.py                    Streamlit 화면과 입력 상태 관리
-modules/templates.py      설정, 장면 예시, 작업 파일 저장·복원
-modules/styles.py         기본 스타일과 사용자 스타일 저장
-modules/compiler.py       프롬프트 생성과 동작 연결 검사
-tests/                    자동 검증
+app.py                     Streamlit 화면과 입력 상태 관리
+modules/templates.py       설정, 장면 예시, 작업 파일 저장·복원
+modules/styles.py          기본 스타일과 사용자 스타일 저장·수정·삭제
+modules/compiler.py        프롬프트 생성과 동작 연결 검사
+tests/                     자동 검증
 .github/workflows/tests.yml 최소/최신 Streamlit CI
-requirements.txt          실행 의존성
-run.bat                   Windows 설치·실행
-run_no_install.bat        Windows 재실행
-LICENSE                   개인·비상업 라이선스
+requirements.txt           실행 의존성
+run.bat                    Windows 설치·실행
+run_no_install.bat         Windows 재실행
+LICENSE                    개인·비상업 라이선스
 ```
 
 가상환경, 캐시, 비밀 설정 파일 및 `data/`의 개인 스타일 파일은 Git 추적 대상에서 제외합니다.
