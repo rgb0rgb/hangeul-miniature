@@ -6,7 +6,7 @@ if not exist "venv\Scripts\python.exe" (
   pause
   exit /b 1
 )
-"venv\Scripts\python.exe" -m streamlit run app.py
+"venv\Scripts\python.exe" -m streamlit run app.py --server.address localhost
 if errorlevel 1 (
   pause
   exit /b 1
