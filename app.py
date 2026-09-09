@@ -4,7 +4,7 @@ from pathlib import Path
 import streamlit as st
 from modules.templates import OPTIONS, PRESETS, PromptParams, CharacterSpec, dump_project, load_project, action_context
 from modules.compiler import build_prompt
-from modules.styles import BUILTIN_STYLES, StyleSpec, read_styles, save_style
+from modules.styles import BUILTIN_STYLES, StyleSpec, delete_style, read_styles, replace_style, save_style
 
 
 st.set_page_config(page_title="Hangeul Miniature", page_icon="🔎", layout="wide")
@@ -24,6 +24,12 @@ def apply_params(params):
         character = params.characters[i] if i < len(params.characters) else CharacterSpec("")
         for name, value in asdict(character).items():
             st.session_state[f"char_{i}_{name}"] = value
+
+
+def apply_project_bytes(raw):
+    params = load_project(raw)
+    apply_params(params)
+    return params
 
 
 def select(name, label):
@@ -50,6 +56,7 @@ def main():
     st.session_state.setdefault("secondary_choice", "none")
     st.session_state.setdefault("character_count", 0)
     st.session_state.setdefault("imported_styles", {})
+    st.session_state.setdefault("use_default_negative", True)
     style_folder = Path(os.environ.get("MINI1_STYLE_DIR", str(Path(__file__).parent / "data" / "styles")))
 
     with st.sidebar:
@@ -60,7 +67,7 @@ def main():
         uploaded = st.file_uploader("저장한 작업 파일", type=["json"])
         if st.button("작업 불러오기", disabled=uploaded is None, use_container_width=True):
             try:
-                apply_params(load_project(uploaded.getvalue()))
+                apply_project_bytes(uploaded.getvalue())
                 st.success("작업을 불러왔습니다.")
             except ValueError as exc:
                 st.error(str(exc))
@@ -77,6 +84,7 @@ def main():
                         style = StyleSpec(name.strip(), form.strip(), palette.strip(), costume.strip(), environment.strip(), mood.strip())
                         save_style(style_folder, style)
                         st.success("스타일을 저장했습니다.")
+                        st.rerun()
                     except (ValueError, OSError) as exc:
                         st.error(f"저장하지 못했습니다: {exc}")
 
@@ -84,6 +92,42 @@ def main():
     catalog = {style.key: style for style in (*BUILTIN_STYLES, *custom, *st.session_state["imported_styles"].values())}
     for error in errors:
         st.sidebar.warning(f"읽지 못한 스타일 파일: {error}")
+
+    if custom:
+        with st.sidebar.expander("내 스타일 수정·삭제"):
+            style_map = {style.key: style for style in custom}
+            selected_key = st.selectbox("수정할 스타일", list(style_map), format_func=lambda key: style_map[key].name, key="manage_style_choice")
+            selected = style_map[selected_key]
+            with st.form(f"edit_style_{selected_key}"):
+                edit_name = st.text_input("스타일 이름", value=selected.name, max_chars=80)
+                edit_form = st.text_area("형태·비율", value=selected.form, max_chars=1000)
+                edit_palette = st.text_area("색감", value=selected.palette, max_chars=1000)
+                edit_costume = st.text_area("의상·소품", value=selected.costume, max_chars=1000)
+                edit_environment = st.text_area("배경 특징", value=selected.environment, max_chars=1000)
+                edit_mood = st.text_area("분위기·감정", value=selected.mood, max_chars=1000)
+                if st.form_submit_button("수정 저장", use_container_width=True):
+                    try:
+                        replacement = StyleSpec(edit_name.strip(), edit_form.strip(), edit_palette.strip(), edit_costume.strip(), edit_environment.strip(), edit_mood.strip())
+                        replace_style(style_folder, selected, replacement)
+                        if st.session_state.get("primary_choice") == selected.key:
+                            st.session_state["primary_choice"] = replacement.key
+                        if st.session_state.get("secondary_choice") == selected.key:
+                            st.session_state["secondary_choice"] = replacement.key
+                        st.success("스타일을 수정했습니다.")
+                        st.rerun()
+                    except (ValueError, OSError) as exc:
+                        st.error(f"수정하지 못했습니다: {exc}")
+            if st.button("선택한 스타일 삭제", key="delete_custom_style", use_container_width=True):
+                try:
+                    delete_style(style_folder, selected)
+                    if st.session_state.get("primary_choice") == selected.key:
+                        st.session_state["primary_choice"] = "none"
+                    if st.session_state.get("secondary_choice") == selected.key:
+                        st.session_state["secondary_choice"] = "none"
+                    st.success("스타일을 삭제했습니다.")
+                    st.rerun()
+                except (ValueError, OSError) as exc:
+                    st.error(f"삭제하지 못했습니다: {exc}")
 
     st.title("Hangeul Miniature")
     left, right = st.columns([1.05, 1], gap="large")
@@ -157,12 +201,13 @@ def main():
             st.text_area("피사체 동작", key="action", max_chars=2000, disabled=disabled or st.session_state.action_source != "custom", on_change=bind_action)
         with st.expander("추가 지시·제외 조건"):
             st.text_area("추가 지시", key="extra", max_chars=3000)
-            st.text_area("제외 조건", key="negative", max_chars=2000)
+            st.checkbox("기본 제외 조건 사용", key="use_default_negative", help="끄면 앱이 자동으로 넣는 watermark, logo, readable lettering 등의 제외 조건을 사용하지 않습니다.")
+            st.text_area("사용자 제외 조건", key="negative", max_chars=2000)
         params = PromptParams(**{f.name: st.session_state[f.name] for f in fields(PromptParams) if f.name not in {"primary_style", "secondary_style", "characters"}}, primary_style=catalog.get(st.session_state.primary_choice), secondary_style=catalog.get(st.session_state.secondary_choice), characters=tuple(characters))
         if st.button("프롬프트 생성", type="primary", use_container_width=True):
             try:
-                result = build_prompt(params)
-                st.session_state["generated"] = (params, result)
+                result = build_prompt(params, include_default_negative=st.session_state.use_default_negative)
+                st.session_state["generated"] = (params, st.session_state.use_default_negative, result)
             except ValueError as exc:
                 st.error(str(exc))
         try:
@@ -175,8 +220,8 @@ def main():
         st.subheader("생성 결과")
         generated = st.session_state.get("generated")
         if generated:
-            saved, result = generated
-            if saved != params:
+            saved, saved_default_negative, result = generated
+            if saved != params or saved_default_negative != st.session_state.use_default_negative:
                 st.warning("설정이 변경되었습니다. 프롬프트 결과는 마지막 생성 시점 기준입니다.")
             st.caption(f"{OPTIONS['medium'][saved.medium]} · {saved.aspect} · {saved.scale} · {len(result.combined):,}자")
             combined, positive, negative = st.tabs(["전체", "본문", "제외 조건"])
@@ -185,7 +230,7 @@ def main():
             with positive:
                 st.code(result.positive, language=None, wrap_lines=True)
             with negative:
-                st.code(result.negative, language=None, wrap_lines=True)
+                st.code(result.negative or "(제외 조건 없음)", language=None, wrap_lines=True)
             st.download_button("프롬프트 TXT", result.combined, "miniature_prompt.txt", "text/plain", use_container_width=True)
             for note in result.notes:
                 st.caption(note)
