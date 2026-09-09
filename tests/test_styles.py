@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from modules.compiler import build_prompt
-from modules.styles import BUILTIN_STYLES, StyleSpec, read_styles, save_style
+from modules.styles import BUILTIN_STYLES, StyleSpec, delete_style, read_styles, replace_style, save_style
 from modules.templates import CharacterSpec, PRESETS, dump_project, load_project
 
 
@@ -77,6 +77,19 @@ class StyleTests(unittest.TestCase):
         params = replace(self.base, primary_style=style)
         restored = load_project(dump_project(params))
         self.assertIn("각진 형태", build_prompt(restored).positive)
+
+    def test_custom_style_can_be_replaced_and_deleted(self):
+        old = StyleSpec("오래된 이름", "형태", "색감", "의상", "배경", "분위기")
+        new = StyleSpec("수정된 이름", "새 형태", "새 색감", "새 의상", "새 배경", "새 분위기")
+        with tempfile.TemporaryDirectory() as folder:
+            save_style(folder, old)
+            replace_style(folder, old, new)
+            styles, errors = read_styles(folder)
+            self.assertFalse(errors)
+            self.assertEqual(styles, [new])
+            self.assertFalse((Path(folder) / f"{old.key}.json").exists())
+            delete_style(folder, new)
+            self.assertEqual(read_styles(folder), ([], []))
 
     def test_invalid_nested_data_rejected(self):
         for changes in ({"characters": (CharacterSpec(""),)}, {"characters": ({"identity": "x"},)}, {"characters": (CharacterSpec("x"),) * 7}, {"secondary_style": self.secondary}, {"primary_style": self.primary, "secondary_style": self.primary}, {"secondary_weight": True}):
