@@ -3,7 +3,9 @@ import os
 import tempfile
 import unittest
 from unittest.mock import patch
+
 from streamlit.testing.v1 import AppTest
+
 from modules.styles import BUILTIN_STYLES
 
 
@@ -11,14 +13,19 @@ class AppTests(unittest.TestCase):
     def app_path(self):
         return str(Path(__file__).resolve().parents[1] / "app.py")
 
-    def test_custom_style_survives_new_session(self):
-        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {"MINI1_STYLE_DIR": folder}):
+    def test_custom_style_survives_new_session_and_shows_notice(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(
+            os.environ, {"MINI1_STYLE_DIR": folder}
+        ):
             app = AppTest.from_file(self.app_path()).run()
             app.text_input(key="new_style_name").set_value("나의 미니어처")
             for field in ("form", "palette", "costume", "environment", "mood"):
                 app.text_area(key=f"new_style_{field}").set_value(f"내 설정 {field}")
             next(b for b in app.button if b.label == "내 스타일 저장").click().run()
             self.assertFalse(app.exception)
+            self.assertTrue(app.success)
+            self.assertIn("스타일을 저장했습니다", app.success[0].value)
+
             restored = AppTest.from_file(self.app_path()).run()
             self.assertIn("나의 미니어처", restored.selectbox(key="primary_choice").options)
             self.assertTrue(any(b.label == "선택한 스타일 삭제" for b in restored.button))
@@ -42,6 +49,7 @@ class AppTests(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertEqual(app.number_input(key="character_count").value, 0)
         self.assertEqual(app.selectbox(key="primary_choice").value, "none")
+        self.assertTrue(app.checkbox(key="use_default_negative").value)
 
     def test_generate_change_video_and_disable_default_avoid(self):
         app = AppTest.from_file(self.app_path()).run()
