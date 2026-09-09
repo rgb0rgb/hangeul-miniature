@@ -56,7 +56,6 @@ def save_style(folder, style):
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"{style.key}.json"
     payload = json.dumps(asdict(style), ensure_ascii=False, indent=2)
-    # Equal content shares a filename; publish complete files atomically.
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=folder, suffix=".tmp", delete=False) as handle:
@@ -67,6 +66,28 @@ def save_style(folder, style):
         if temporary is not None:
             temporary.unlink(missing_ok=True)
     return path
+
+
+def delete_style(folder, style):
+    style.validate()
+    path = Path(folder) / f"{style.key}.json"
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        raise ValueError("삭제할 사용자 스타일 파일을 찾을 수 없습니다.")
+
+
+def replace_style(folder, old_style, new_style):
+    old_style.validate()
+    new_style.validate()
+    folder = Path(folder)
+    old_path = folder / f"{old_style.key}.json"
+    if not old_path.is_file():
+        raise ValueError("수정할 사용자 스타일 파일을 찾을 수 없습니다.")
+    new_path = save_style(folder, new_style)
+    if old_path != new_path:
+        old_path.unlink()
+    return new_path
 
 
 def read_styles(folder):
